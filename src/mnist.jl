@@ -17,7 +17,7 @@ datas_x = cat(train_x, tests_x; dims=3)
 datas_y = cat(train_y, tests_y; dims=1)
 
 # Helper function to plot RBM diagnostics and digits
-function diagnostic_plots(; rbm, history, nsamples=4096, tsamples=5000, figtitle="RBM training")
+function mnist_plots(; rbm, history, nsamples=4096, tsamples=5000, figtitle="RBM training")
 	samples_F_from_rand = (avg = Float[], std = Float[])
 	samples_v_from_rand = bitrand(28,28,nsamples)
 	@showprogress "MC from rand " for t in 1:tsamples
@@ -163,5 +163,14 @@ function run_binary_mnist_benchmarks(output_dir::String)
     history = RBMs.pcd_centered!(rbm, train_x; epochs=100, batchsize=batch, verbose=false, steps=1, optimizer=Flux.ADAM(1e-4), center_v=true, center_h=false, α=0.9)
     fig = diagnostic_plots(; rbm, history)
     save(joinpath(output_dir, "PCD-1_center_v_ADAM.pdf"), fig)
+
+
+    # Repro one of the experiments in Decelle's paper
+    rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,500), zeros(Float,28,28,500))
+    RBMs.initialize!(rbm, train_x)
+    history = RBMs.cd!(rbm, train_x; epochs=1000, batch=500, verbose=false, steps=10, optimizer=Flux.Descent(1e-4))
+    fig = diagnostic_plots(; rbm, history, tsamples=10)
+    save(joinpath(output_dir, "Rdm-10_SGD.pdf"), fig)
+
 
 end

@@ -10,10 +10,6 @@ import RestrictedBoltzmannMachines as RBMs
 @show BLAS.get_config()
 
 include("util.jl")
-
-module Mnist
-    import ..moving_average
-    include("mnist.jl")
-end
+include("mnist.jl")
 
 end
