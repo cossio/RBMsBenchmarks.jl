@@ -119,7 +119,7 @@ end
 ###############################
 
 
-function run_binary_mnist_benchmarks(output_dir::String = joinpath(pwd(), "../out"))
+function run_binary_mnist_benchmarks(output_dir::String = joinpath(pwd(), "out"))
     M = 128
     batch = 256
 
