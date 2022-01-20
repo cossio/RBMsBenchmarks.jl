@@ -1,10 +1,36 @@
-
 #=
-Helper functions to evaluate different RBM training schemes on MNIST
+Dependencies
 =#
 
+using Pkg; Pkg.instantiate()
+using MKL, Statistics, Random, LinearAlgebra
+using CairoMakie, BenchmarkTools, StatsBase, ProgressMeter, ImageFiltering, OffsetArrays
+import Flux, Zygote, MLDatasets, ValueHistories, BSON
+import RestrictedBoltzmannMachines as RBMs
+
+#=
+Some checks
+=#
+
+Threads.nthreads() > 1 || @warn "Running on 1 Julia thread."
+BLAS.get_num_threads() == 1 || @warn "BLAS has >1 threads; recommended to set OPENBLAS_NUM_THREADS=1 before running"
+
+#= #############
+Util functions
+=# #############
+
+function moving_average(x::AbstractVector, σ::Int = max(1, length(x) ÷ 20))
+	# https://stackoverflow.com/a/59589877/855050
+	kernel = OffsetArray(fill(1/(2σ + 1), 2σ + 1), -σ:σ)
+	return imfilter(x, kernel)
+end
+
+#= #############
+Load MNIST
+=# #############
+
 # Float32 is typically faster than Float64, and uses less memory
-Float = Float32
+const Float = Float32
 
 # Load MNIST data
 train_x, train_y = MLDatasets.MNIST.traindata()
@@ -16,6 +42,11 @@ tests_x = tests_x .> 0.5
 datas_x = cat(train_x, tests_x; dims=3)
 datas_y = cat(train_y, tests_y; dims=1)
 
+#= #############
+Helper functions used by the benchmarks
+=# #############
+
+# produces generated samples from an RBM
 function mnist_produce_samples(; rbm, nsamples=4000, steps=5000)
     F_from_rand = (avg = Float[], std = Float[])
 	v_from_rand = bitrand(28, 28, nsamples)
@@ -121,11 +152,11 @@ end
 #= Benchmarks =#
 ###############################
 
-
-function run_binary_mnist_benchmarks()
+# Runs benchmarks in parallel
+function binary_mnist_benchmarks_run()
     M = 128 # number of hidden units
     B = 256 # batch size
-    nepoch = 1000
+    nepoch = 3
 
     benchmarks = (
         mnist_binary_cd_sgd,
@@ -140,7 +171,9 @@ function run_binary_mnist_benchmarks()
     @sync for benchmark in benchmarks
         Threads.@spawn benchmark(; M, B, nepoch)
     end
+end
 
+function binary_mnist_benchmarks_plots()
     #= Make and save plots. Since Makie is not threadsafe
     (see https://github.com/JuliaPlots/Makie.jl/issues/812)
     we do this in series. =#
@@ -154,13 +187,16 @@ function run_binary_mnist_benchmarks()
 end
 
 
+#= The different benchmarks are defined below =#
+
+
 function mnist_binary_cd_sgd(; M, B, nepoch)
     @sync for η in [0.0001, 0.001], k in [1, 10]
         Threads.@spawn begin
             rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
             RBMs.initialize!(rbm, train_x)
             history = RBMs.cd!(
-                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                rbm, train_x; epochs=nepoch, batchsize=B,
                 steps=k, optimizer=Flux.Descent(η)
             )
             samples = mnist_produce_samples(; rbm)
@@ -176,7 +212,7 @@ function mnist_binary_pcd_sgd(; M, B, nepoch)
             rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
             RBMs.initialize!(rbm, train_x)
             history = RBMs.pcd!(
-                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                rbm, train_x; epochs=nepoch, batchsize=B,
                 steps=k, optimizer=Flux.Descent(η)
             )
             samples = mnist_produce_samples(; rbm)
@@ -192,7 +228,7 @@ function mnist_binary_cd_adam(; M, B, nepoch)
             rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
             RBMs.initialize!(rbm, train_x)
             history = RBMs.cd!(
-                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                rbm, train_x; epochs=nepoch, batchsize=B,
                 steps=k, optimizer=Flux.ADAM(η)
             )
             samples = mnist_produce_samples(; rbm)
@@ -208,7 +244,7 @@ function mnist_binary_pcd_adam(; M, B, nepoch)
             rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
             RBMs.initialize!(rbm, train_x)
             history = RBMs.pcd!(
-                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                rbm, train_x; epochs=nepoch, batchsize=B,
                 steps=k, optimizer=Flux.ADAM(η)
             )
             samples = mnist_produce_samples(; rbm)
@@ -224,7 +260,7 @@ function mnist_binary_pcd_center_sgd(; M, B, nepoch)
             rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
             RBMs.initialize!(rbm, train_x)
             history = RBMs.pcd_centered!(
-                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                rbm, train_x; epochs=nepoch, batchsize=B,
                 steps=k, optimizer=Flux.Descent(η), center_v=cv, center_h=ch
             )
             samples = mnist_produce_samples(; rbm)
@@ -240,7 +276,7 @@ function mnist_binary_pcd_center_adam(; M, B, nepoch)
             rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
             RBMs.initialize!(rbm, train_x)
             history = RBMs.pcd_centered!(
-                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                rbm, train_x; epochs=nepoch, batchsize=B,
                 steps=k, optimizer=Flux.ADAM(η), center_v=cv, center_h=ch
             )
             samples = mnist_produce_samples(; rbm)
@@ -257,9 +293,16 @@ function mnist_binary_rdm_sgd(; M, B, nepoch)
         Threads.@spawn begin
             rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
             RBMs.initialize!(rbm, train_x)
-            history = RBMs.rdm!(rbm, train_x; epochs=nepoch, batchsize=B, verbose=false, steps=k, optimizer=Flux.Descent(1e-4))
+            history = RBMs.rdm!(rbm, train_x; epochs=nepoch, batchsize=B, steps=k, optimizer=Flux.Descent(1e-4))
             samples = mnist_produce_samples(; rbm, steps=k)
             BSON.@save "$OUTDIR/Rdm-$(k)_SGD-$(η).mnist.bson" rbm history samples
         end
     end
 end
+
+
+##############
+# Run benchmarks
+##############
+
+binary_mnist_benchmarks_run()
