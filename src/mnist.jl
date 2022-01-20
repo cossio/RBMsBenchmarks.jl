@@ -126,43 +126,43 @@ function run_binary_mnist_benchmarks(output_dir::String = joinpath(pwd(), "out")
 
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
     RBMs.initialize!(rbm, train_x)
-    history = RBMs.cd!(rbm, train_x; epochs=100, batch=256, verbose=false, steps=1, optimizer=Flux.Descent(1e-4))
-    fig = diagnostic_plots(; rbm, history)
+    history = RBMs.cd!(rbm, train_x; epochs=100, batchsize=256, verbose=false, steps=1, optimizer=Flux.Descent(1e-4))
+    fig = mnist_plots(; rbm, history)
     save(joinpath(output_dir, "CD-1_SGD.pdf"), fig)
 
 
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
     RBMs.initialize!(rbm, train_x);
-    history = RBMs.cd!(rbm, train_x; epochs=100, batch=256, verbose=false, steps=1, optimizer=Flux.ADAM())
-    fig = diagnostic_plots(; rbm, history)
+    history = RBMs.cd!(rbm, train_x; epochs=100, batchsize=256, verbose=false, steps=1, optimizer=Flux.ADAM())
+    fig = mnist_plots(; rbm, history)
     save(joinpath(output_dir, "CD-1_ADAM.pdf"), fig)
 
 
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
     RBMs.initialize!(rbm, train_x)
-    history = RBMs.cd!(rbm, train_x; epochs=100, batch=256, verbose=false, steps=20, optimizer=Flux.ADAM())
-    fig = diagnostic_plots(; rbm, history)
+    history = RBMs.cd!(rbm, train_x; epochs=100, batchsize=256, verbose=false, steps=20, optimizer=Flux.ADAM())
+    fig = mnist_plots(; rbm, history)
     save(joinpath(output_dir, "CD-20_ADAM.pdf"), fig)
 
 
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
     RBMs.initialize!(rbm, train_x)
     history = RBMs.pcd!(rbm, train_x; epochs=100, batchsize=batch, verbose=false, steps=1, optimizer=Flux.ADAM(1e-4))
-    fig = diagnostic_plots(; rbm, history)
+    fig = mnist_plots(; rbm, history)
     save(joinpath(output_dir, "PCD-1_ADAM.pdf"), fig)
 
 
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
     RBMs.initialize!(rbm, train_x)
     history = RBMs.pcd_centered!(rbm, train_x; epochs=100, batchsize=batch, verbose=false, steps=1, optimizer=Flux.ADAM(1e-4), center_v=true, center_h=true, α=0.9)
-    fig = diagnostic_plots(; rbm, history)
+    fig = mnist_plots(; rbm, history)
     save(joinpath(output_dir, "PCD-1_center_vh_ADAM.pdf"), fig)
 
 
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
     RBMs.initialize!(rbm, train_x)
     history = RBMs.pcd_centered!(rbm, train_x; epochs=100, batchsize=batch, verbose=false, steps=1, optimizer=Flux.ADAM(1e-4), center_v=true, center_h=false, α=0.9)
-    fig = diagnostic_plots(; rbm, history)
+    fig = mnist_plots(; rbm, history)
     save(joinpath(output_dir, "PCD-1_center_v_ADAM.pdf"), fig)
 
 
@@ -170,7 +170,7 @@ function run_binary_mnist_benchmarks(output_dir::String = joinpath(pwd(), "out")
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,500), zeros(Float,28,28,500))
     RBMs.initialize!(rbm, train_x)
     history = RBMs.cd!(rbm, train_x; epochs=1000, batchsize=500, verbose=false, steps=10, optimizer=Flux.Descent(1e-4))
-    fig = diagnostic_plots(; rbm, history, tsamples=10)
+    fig = mnist_plots(; rbm, history, tsamples=10)
     save(joinpath(output_dir, "Rdm-10_SGD.pdf"), fig)
 
 
