@@ -119,9 +119,10 @@ end
 ###############################
 
 
-function run_binary_mnist_benchmarks(output_dir::String)
+function run_binary_mnist_benchmarks(output_dir::String = joinpath(pwd(), "../out"))
     M = 128
     batch = 256
+
 
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
     RBMs.initialize!(rbm, train_x)
