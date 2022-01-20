@@ -16,26 +16,29 @@ tests_x = tests_x .> 0.5
 datas_x = cat(train_x, tests_x; dims=3)
 datas_y = cat(train_y, tests_y; dims=1)
 
-# Helper function to plot RBM diagnostics and digits
-function mnist_plots(; rbm, history, nsamples=4096, tsamples=5000, figtitle="RBM training")
-	samples_F_from_rand = (avg = Float[], std = Float[])
-	samples_v_from_rand = bitrand(28,28,nsamples)
-	@showprogress "MC from rand " for t in 1:tsamples
-	    samples_v_from_rand .= RBMs.sample_v_from_v(rbm, samples_v_from_rand)
-	    F = RBMs.free_energy(rbm, samples_v_from_rand)
-	    push!(samples_F_from_rand.avg, mean(F))
-	    push!(samples_F_from_rand.std, std(F))
+function mnist_produce_samples(; rbm, nsamples=4000, steps=5000)
+    F_from_rand = (avg = Float[], std = Float[])
+	v_from_rand = bitrand(28, 28, nsamples)
+	@showprogress "MC from rand " for t in 1:steps
+	    v_from_rand .= RBMs.sample_v_from_v(rbm, v_from_rand)
+	    F = RBMs.free_energy(rbm, v_from_rand)
+	    push!(F_from_rand.avg, mean(F))
+	    push!(F_from_rand.std, std(F))
 	end
-	samples_F_from_data = (avg = Float[], std = Float[])
-	samples_v_from_data = copy(train_x[:,:,rand(1:size(train_x,3),nsamples)])
-	@showprogress "MC from data " for t in 1:tsamples
-	    samples_v_from_data .= RBMs.sample_v_from_v(rbm, samples_v_from_data)
-	    F = RBMs.free_energy(rbm, samples_v_from_data)
-	    push!(samples_F_from_data.avg, mean(F))
-	    push!(samples_F_from_data.std, std(F))
+	F_from_data = (avg = Float[], std = Float[])
+	v_from_data = copy(train_x[:,:,rand(1:size(train_x,3), nsamples)])
+	@showprogress "MC from data " for t in 1:steps
+	    v_from_data .= RBMs.sample_v_from_v(rbm, v_from_data)
+	    F = RBMs.free_energy(rbm, v_from_data)
+	    push!(F_from_data.avg, mean(F))
+	    push!(F_from_data.std, std(F))
 	end
+    return (; F_from_rand, v_from_rand, F_from_data, v_from_data)
+end
 
-	∂m = RBMs.∂free_energy(rbm, samples_v_from_rand)
+# Helper function to plot RBM diagnostics and digits
+function mnist_plots(; rbm, history, samples)
+	∂m = RBMs.∂free_energy(rbm, samples.v_from_rand)
 	∂d = RBMs.∂free_energy(rbm, tests_x)
 	train_F = RBMs.free_energy(rbm, train_x)
 	tests_F = RBMs.free_energy(rbm, tests_x)
@@ -73,10 +76,10 @@ function mnist_plots(; rbm, history, nsamples=4096, tsamples=5000, figtitle="RBM
 	axislegend(axstat, position=:rb)
 
 	axF = Axis(fig[1:2,1][3,1], xlabel="step", ylabel="F")
-	errorbars!(axF, 1:length(samples_F_from_rand.avg), samples_F_from_rand.avg, samples_F_from_rand.std, color=(:lightgray, 0.1))
-	errorbars!(axF, 1:length(samples_F_from_data.avg), samples_F_from_data.avg, samples_F_from_data.std, color=(:lightblue, 0.1))
-	lines!(axF, 1:length(samples_F_from_rand.avg), samples_F_from_rand.avg, color=:black, label="MC (rand)")
-	lines!(axF, 1:length(samples_F_from_data.avg), samples_F_from_data.avg, color=:blue, label="MC (data)")
+	errorbars!(axF, 1:length(samples.F_from_rand.avg), samples.F_from_rand.avg, samples.F_from_rand.std, color=(:lightgray, 0.1))
+	errorbars!(axF, 1:length(samples.F_from_data.avg), samples.F_from_data.avg, samples.F_from_data.std, color=(:lightblue, 0.1))
+	lines!(axF, 1:length(samples.F_from_rand.avg), samples.F_from_rand.avg, color=:black, label="MC (rand)")
+	lines!(axF, 1:length(samples.F_from_data.avg), samples.F_from_data.avg, color=:blue, label="MC (data)")
 	hlines!(axF, mean(RBMs.free_energy(rbm, tests_x)), label="tests", color=:red, linestyle=:solid)
 	hlines!(axF, mean(RBMs.free_energy(rbm, train_x)), label="train", color=:orange, linestyle=:dash)
 	axislegend(axF, position=:rt, orientation=:horizontal, nbanks=2)
@@ -84,8 +87,8 @@ function mnist_plots(; rbm, history, nsamples=4096, tsamples=5000, figtitle="RBM
 	axHist = Axis(fig[1,2][1,1], xlabel="free energy", ylabel="frequency")
 	stairs!(axHist, normalize(fit(Histogram, RBMs.free_energy(rbm, train_x), nbins=20), mode=:pdf), label="train")
 	stairs!(axHist, normalize(fit(Histogram, RBMs.free_energy(rbm, tests_x), nbins=20), mode=:pdf), label="tests")
-	stairs!(axHist, normalize(fit(Histogram, RBMs.free_energy(rbm, samples_v_from_rand), nbins=20), mode=:pdf), label="MC (rand)")
-	stairs!(axHist, normalize(fit(Histogram, RBMs.free_energy(rbm, samples_v_from_data), nbins=20), mode=:pdf), label="MC (data)")
+	stairs!(axHist, normalize(fit(Histogram, RBMs.free_energy(rbm, samples.v_from_rand), nbins=20), mode=:pdf), label="MC (rand)")
+	stairs!(axHist, normalize(fit(Histogram, RBMs.free_energy(rbm, samples.v_from_data), nbins=20), mode=:pdf), label="MC (data)")
 	axislegend(axHist, position=:rt, orientation=:horizontal, nbanks=2)
 
 	axDigits = Axis(fig[2,2][1,1], ylabel="-free energy", xticks = 0:9)
@@ -105,7 +108,7 @@ function mnist_plots(; rbm, history, nsamples=4096, tsamples=5000, figtitle="RBM
 	for i in 1:3, j in 1:3
 	    axImg = Axis(fig[2,3][i,j], yreversed=true)
 	    hidedecorations!(axImg)
-	    heatmap!(axImg, samples_v_from_rand[:, :, rand(1:size(samples_v_from_rand,3))])
+	    heatmap!(axImg, samples.v_from_rand[:, :, rand(1:size(samples.v_from_rand,3))])
 	end
 
     set_theme!() # revert Makie defaults
@@ -119,59 +122,144 @@ end
 ###############################
 
 
-function run_binary_mnist_benchmarks(output_dir::String = joinpath(pwd(), "out"))
-    M = 128
-    batch = 256
+function run_binary_mnist_benchmarks()
+    M = 128 # number of hidden units
+    B = 256 # batch size
+    nepoch = 1000
+
+    benchmarks = (
+        mnist_binary_cd_sgd,
+        mnist_binary_pcd_sgd,
+        mnist_binary_cd_adam,
+        mnist_binary_pcd_adam,
+        mnist_binary_pcd_center_sgd,
+        mnist_binary_pcd_center_adam,
+        mnist_binary_rdm_sgd
+    )
+
+    @sync for benchmark in benchmarks
+        Threads.@spawn benchmark(; M, B, nepoch)
+    end
+
+    #= Make and save plots. Since Makie is not threadsafe
+    (see https://github.com/JuliaPlots/Makie.jl/issues/812)
+    we do this in series. =#
+    for file in readdir(OUTDIR; join=true)
+        if endswith(file, ".mnist.bson")
+            BSON.@load file rbm history samples
+            fig = mnist_plots(; rbm, history, samples)
+            save(file[begin:(end - 11)] * ".pdf", fig)
+        end
+    end
+end
 
 
-    rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-    RBMs.initialize!(rbm, train_x)
-    history = RBMs.cd!(rbm, train_x; epochs=100, batchsize=256, verbose=false, steps=1, optimizer=Flux.Descent(1e-4))
-    fig = mnist_plots(; rbm, history)
-    save(joinpath(output_dir, "CD-1_SGD.pdf"), fig)
+function mnist_binary_cd_sgd(; M, B, nepoch)
+    @sync for η in [0.0001, 0.001], k in [1, 10]
+        Threads.@spawn begin
+            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+            RBMs.initialize!(rbm, train_x)
+            history = RBMs.cd!(
+                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                steps=k, optimizer=Flux.Descent(η)
+            )
+            samples = mnist_produce_samples(; rbm)
+            BSON.@save "$OUTDIR/CD-$(k)_SGD-$(η).mnist.bson" rbm history samples
+        end
+    end
+end
 
 
-    rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-    RBMs.initialize!(rbm, train_x);
-    history = RBMs.cd!(rbm, train_x; epochs=100, batchsize=256, verbose=false, steps=1, optimizer=Flux.ADAM())
-    fig = mnist_plots(; rbm, history)
-    save(joinpath(output_dir, "CD-1_ADAM.pdf"), fig)
+function mnist_binary_pcd_sgd(; M, B, nepoch)
+    @sync for η in [0.0001, 0.001], k in [1, 10]
+        Threads.@spawn begin
+            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+            RBMs.initialize!(rbm, train_x)
+            history = RBMs.pcd!(
+                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                steps=k, optimizer=Flux.Descent(η)
+            )
+            samples = mnist_produce_samples(; rbm)
+            BSON.@save "$OUTDIR/CD-$(k)_SGD-$(η).mnist.bson" rbm history samples
+        end
+    end
+end
 
 
-    rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-    RBMs.initialize!(rbm, train_x)
-    history = RBMs.cd!(rbm, train_x; epochs=100, batchsize=256, verbose=false, steps=20, optimizer=Flux.ADAM())
-    fig = mnist_plots(; rbm, history)
-    save(joinpath(output_dir, "CD-20_ADAM.pdf"), fig)
+function mnist_binary_cd_adam(; M, B, nepoch)
+    @sync for η in [0.0001, 0.001], k in [1, 10]
+        Threads.@spawn begin
+            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+            RBMs.initialize!(rbm, train_x)
+            history = RBMs.cd!(
+                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                steps=k, optimizer=Flux.ADAM(η)
+            )
+            samples = mnist_produce_samples(; rbm)
+            BSON.@save "$OUTDIR/CD-$(k)_ADAM-$(η).mnist.bson" rbm history samples
+        end
+    end
+end
 
 
-    rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-    RBMs.initialize!(rbm, train_x)
-    history = RBMs.pcd!(rbm, train_x; epochs=100, batchsize=batch, verbose=false, steps=1, optimizer=Flux.ADAM(1e-4))
-    fig = mnist_plots(; rbm, history)
-    save(joinpath(output_dir, "PCD-1_ADAM.pdf"), fig)
+function mnist_binary_pcd_adam(; M, B, nepoch)
+    @sync for η in [0.0001, 0.001], k in [1, 10]
+        Threads.@spawn begin
+            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+            RBMs.initialize!(rbm, train_x)
+            history = RBMs.pcd!(
+                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                steps=k, optimizer=Flux.ADAM(η)
+            )
+            samples = mnist_produce_samples(; rbm)
+            BSON.@save "$OUTDIR/PCD-$(k)_ADAM-$(η).mnist.bson" rbm history samples
+        end
+    end
+end
 
 
-    rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-    RBMs.initialize!(rbm, train_x)
-    history = RBMs.pcd_centered!(rbm, train_x; epochs=100, batchsize=batch, verbose=false, steps=1, optimizer=Flux.ADAM(1e-4), center_v=true, center_h=true, α=0.9)
-    fig = mnist_plots(; rbm, history)
-    save(joinpath(output_dir, "PCD-1_center_vh_ADAM.pdf"), fig)
+function mnist_binary_pcd_center_sgd(; M, B, nepoch)
+    @sync for η in [0.0001, 0.001], k in [1, 10], cv in [true, false], ch in [true, false]
+        Threads.@spawn begin
+            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+            RBMs.initialize!(rbm, train_x)
+            history = RBMs.pcd_centered!(
+                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                steps=k, optimizer=Flux.Descent(η), center_v=cv, center_h=ch
+            )
+            samples = mnist_produce_samples(; rbm)
+            BSON.@save "$OUTDIR/PCD-$(k)_cv-$(Int(cv))_ch-$(Int(ch))SGD-$(η).mnist.bson" rbm history samples
+        end
+    end
+end
 
 
-    rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-    RBMs.initialize!(rbm, train_x)
-    history = RBMs.pcd_centered!(rbm, train_x; epochs=100, batchsize=batch, verbose=false, steps=1, optimizer=Flux.ADAM(1e-4), center_v=true, center_h=false, α=0.9)
-    fig = mnist_plots(; rbm, history)
-    save(joinpath(output_dir, "PCD-1_center_v_ADAM.pdf"), fig)
+function mnist_binary_pcd_center_adam(; M, B, nepoch)
+    @sync for η in [0.0001, 0.001], k in [1, 10], cv in [true, false], ch in [true, false]
+        Threads.@spawn begin
+            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+            RBMs.initialize!(rbm, train_x)
+            history = RBMs.pcd_centered!(
+                rbm, train_x; epochs=nepoch, batchsize=B, verbose=false,
+                steps=k, optimizer=Flux.ADAM(η), center_v=cv, center_h=ch
+            )
+            samples = mnist_produce_samples(; rbm)
+            BSON.@save "$OUTDIR/PCD-$(k)_cv-$(Int(cv))_ch-$(Int(ch))_ADAM-$(η).mnist.bson" rbm history samples
+        end
+    end
+end
 
 
+function mnist_binary_rdm_sgd(; M, B, nepoch)
     # Repro one of the experiments in Decelle's paper
-    rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,500), zeros(Float,28,28,500))
-    RBMs.initialize!(rbm, train_x)
-    history = RBMs.cd!(rbm, train_x; epochs=1000, batchsize=500, verbose=false, steps=10, optimizer=Flux.Descent(1e-4))
-    fig = mnist_plots(; rbm, history, tsamples=10)
-    save(joinpath(output_dir, "Rdm-10_SGD.pdf"), fig)
-
-
+    # http://arxiv.org/abs/2105.13889
+    @sync for η in [0.0001, 0.001], k in [10, 20]
+        Threads.@spawn begin
+            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+            RBMs.initialize!(rbm, train_x)
+            history = RBMs.rdm!(rbm, train_x; epochs=nepoch, batchsize=B, verbose=false, steps=k, optimizer=Flux.Descent(1e-4))
+            samples = mnist_produce_samples(; rbm, steps=k)
+            BSON.@save "$OUTDIR/Rdm-$(k)_SGD-$(η).mnist.bson" rbm history samples
+        end
+    end
 end

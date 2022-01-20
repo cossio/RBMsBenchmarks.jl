@@ -56,6 +56,11 @@ git-tree-sha1 = "a598ecb0d717092b5539dbbe890c98bac842b072"
 uuid = "ab4f0b2a-ad5b-11e8-123f-65d77653426b"
 version = "0.2.0"
 
+[[deps.BSON]]
+git-tree-sha1 = "ebcd6e22d69f21249b7b8668351ebf42d6dc87a1"
+uuid = "fbb218c0-5317-5bc6-957e-2ee96dd4b1f0"
+version = "0.3.4"
+
 [[deps.Base64]]
 uuid = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 
@@ -132,9 +137,9 @@ version = "1.0.5"
 
 [[deps.CairoMakie]]
 deps = ["Base64", "Cairo", "Colors", "FFTW", "FileIO", "FreeType", "GeometryBasics", "LinearAlgebra", "Makie", "SHA", "StaticArrays"]
-git-tree-sha1 = "19b9191bb03a2943afd38eb4d9fdd96f0af56a59"
+git-tree-sha1 = "c5c1397a0df375fda6fc20a54c5610c96ad71cf5"
 uuid = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
-version = "0.7.0"
+version = "0.7.1"
 
 [[deps.Cairo_jll]]
 deps = ["Artifacts", "Bzip2_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "JLLWrappers", "LZO_jll", "Libdl", "Pixman_jll", "Pkg", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Zlib_jll", "libpng_jll"]
@@ -149,16 +154,16 @@ uuid = "aafaddc9-749c-510e-ac4f-586e18779b91"
 version = "0.2.2"
 
 [[deps.ChainRules]]
-deps = ["ChainRulesCore", "Compat", "LinearAlgebra", "Random", "RealDot", "Statistics"]
-git-tree-sha1 = "d69f59229f8f9955b1e16febeafe6f288b0618b5"
+deps = ["ChainRulesCore", "Compat", "IrrationalConstants", "LinearAlgebra", "Random", "RealDot", "Statistics"]
+git-tree-sha1 = "e659ddd9b3d67b236c750805e0176217f26d70a9"
 uuid = "082447d4-558c-5d27-93f4-14fc19e9eca2"
-version = "1.20.1"
+version = "1.23.0"
 
 [[deps.ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra", "SparseArrays"]
-git-tree-sha1 = "6e39c91fb4b84dcb870813c91674bdebb9145895"
+git-tree-sha1 = "54fc4400de6e5c3e27be6047da2ef6ba355511f8"
 uuid = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-version = "1.11.5"
+version = "1.11.6"
 
 [[deps.ChangesOfVariables]]
 deps = ["ChainRulesCore", "LinearAlgebra", "Test"]
@@ -826,9 +831,9 @@ version = "0.5.9"
 
 [[deps.Makie]]
 deps = ["Animations", "Base64", "ColorBrewer", "ColorSchemes", "ColorTypes", "Colors", "Contour", "Distributions", "DocStringExtensions", "FFMPEG", "FileIO", "FixedPointNumbers", "Formatting", "FreeType", "FreeTypeAbstraction", "GeometryBasics", "GridLayoutBase", "ImageIO", "IntervalSets", "Isoband", "KernelDensity", "LaTeXStrings", "LinearAlgebra", "MakieCore", "Markdown", "Match", "MathTeXEngine", "Observables", "OffsetArrays", "Packing", "PlotUtils", "PolygonOps", "Printf", "Random", "RelocatableFolders", "Serialization", "Showoff", "SignedDistanceFields", "SparseArrays", "StaticArrays", "Statistics", "StatsBase", "StatsFuns", "StructArrays", "UnicodeFun"]
-git-tree-sha1 = "df53c9975b479967bf074537812f0e19a8c2f0b2"
+git-tree-sha1 = "8222fe4310820801c6590256b0df7f83bfa78c1a"
 uuid = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
-version = "0.16.1"
+version = "0.16.2"
 
 [[deps.MakieCore]]
 deps = ["Observables"]
@@ -1156,7 +1161,7 @@ version = "1.3.0"
 
 [[deps.RestrictedBoltzmannMachines]]
 deps = ["ChainRulesCore", "DiffRules", "FillArrays", "Flux", "LinearAlgebra", "LogExpFunctions", "LoopVectorization", "Random", "SpecialFunctions", "Statistics", "ValueHistories", "Zygote"]
-git-tree-sha1 = "ed1ec83319109fdfbfe091ed1a15febc4b0a274c"
+git-tree-sha1 = "a7da3ca4493f54b8b3fcf72eb4c59f780889a62b"
 repo-rev = "master"
 repo-url = "https://github.com/cossio/RestrictedBoltzmannMachines.jl.git"
 uuid = "12e6b396-7db5-4506-8cb6-664a4fe1e50e"
