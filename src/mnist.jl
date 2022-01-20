@@ -169,7 +169,7 @@ function run_binary_mnist_benchmarks(output_dir::String = joinpath(pwd(), "../ou
     # Repro one of the experiments in Decelle's paper
     rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,500), zeros(Float,28,28,500))
     RBMs.initialize!(rbm, train_x)
-    history = RBMs.cd!(rbm, train_x; epochs=1000, batch=500, verbose=false, steps=10, optimizer=Flux.Descent(1e-4))
+    history = RBMs.cd!(rbm, train_x; epochs=1000, batchsize=500, verbose=false, steps=10, optimizer=Flux.Descent(1e-4))
     fig = diagnostic_plots(; rbm, history, tsamples=10)
     save(joinpath(output_dir, "Rdm-10_SGD.pdf"), fig)
 
