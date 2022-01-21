@@ -1,11 +1,15 @@
 # RBMsBenchmarks Julia scripts
 
 Benchmarks for https://github.com/cossio/RestrictedBoltzmannMachines.jl.
+The benchmarks are run in parallel.
 
-The following script files can be executed to run the benchmarks:
+You should set `export MKL_NUM_THREADS=1` if using MKL (recommended) or `export OPENBLAS_NUM_THREADS=1` before running these scripts.
+Otherwise the internal threads of BLAS will conflict with the threads used to run the benchmarks an the overall performance will be slower.
+
+For example, to run the MNIST benchmarks with 8 threads, do:
 
 ```
-mnist.sh # Benchmarks on the MNIST dataset
+export MKL_NUM_THREADS=1
+julia -t 8 mnist.jl
 ```
 
-The benchmarks are run in parallel using 16 threads (you can change that in the script).

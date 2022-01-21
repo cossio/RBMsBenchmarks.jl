@@ -1,19 +1,27 @@
 #=
-Dependencies
+Preliminaries
 =#
 
-using Pkg; Pkg.instantiate()
-using MKL, Statistics, Random, LinearAlgebra
+using Pkg
+Pkg.activate(@__DIR__)
+Pkg.instantiate()
+
+using MKL, Statistics, Random, LinearAlgebra, Logging, Serialization
 using CairoMakie, BenchmarkTools, StatsBase, ProgressMeter, ImageFiltering, OffsetArrays
-import Flux, Zygote, MLDatasets, ValueHistories, BSON
+import Flux, Zygote, MLDatasets, ValueHistories
 import RestrictedBoltzmannMachines as RBMs
 
-#=
-Some checks
-=#
+# so that MNIST is dowloaded gracefully
+ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
-Threads.nthreads() > 1 || @warn "Running on 1 Julia thread."
-BLAS.get_num_threads() == 1 || @warn "BLAS has >1 threads; recommended to set OPENBLAS_NUM_THREADS=1 before running"
+Threads.nthreads() > 1 || @warn "running on 1 Julia thread"
+BLAS.get_num_threads() == 1 || @warn ">1 BLAS threads"
+
+# directory where we place plots
+const OUTDIR = joinpath(pwd(), "out/mnist")
+rm(OUTDIR; force=true, recursive=true) # clean
+mkpath(OUTDIR)
+@info "saving to $OUTDIR"
 
 #= #############
 Util functions
@@ -38,7 +46,7 @@ tests_x, tests_y = MLDatasets.MNIST.testdata()
 # binarize
 train_x = train_x .> 0.5
 tests_x = tests_x .> 0.5
-# join
+# all data together
 datas_x = cat(train_x, tests_x; dims=3)
 datas_y = cat(train_y, tests_y; dims=1)
 
@@ -47,18 +55,18 @@ Helper functions used by the benchmarks
 =# #############
 
 # produces generated samples from an RBM
-function mnist_produce_samples(; rbm, nsamples=4000, steps=5000)
+function generate_samples(; rbm, chains=4000, len=50)
     F_from_rand = (avg = Float[], std = Float[])
-	v_from_rand = bitrand(28, 28, nsamples)
-	@showprogress "MC from rand " for t in 1:steps
+	v_from_rand = bitrand(28, 28, chains)
+	for _ in 1:len
 	    v_from_rand .= RBMs.sample_v_from_v(rbm, v_from_rand)
 	    F = RBMs.free_energy(rbm, v_from_rand)
 	    push!(F_from_rand.avg, mean(F))
 	    push!(F_from_rand.std, std(F))
 	end
 	F_from_data = (avg = Float[], std = Float[])
-	v_from_data = copy(train_x[:,:,rand(1:size(train_x,3), nsamples)])
-	@showprogress "MC from data " for t in 1:steps
+	v_from_data = copy(train_x[:,:,rand(1:size(train_x,3), chains)])
+	for _ in 1:len
 	    v_from_data .= RBMs.sample_v_from_v(rbm, v_from_data)
 	    F = RBMs.free_energy(rbm, v_from_data)
 	    push!(F_from_data.avg, mean(F))
@@ -68,7 +76,7 @@ function mnist_produce_samples(; rbm, nsamples=4000, steps=5000)
 end
 
 # Helper function to plot RBM diagnostics and digits
-function mnist_plots(; rbm, history, samples)
+function produce_plot(; rbm, history, samples)
 	∂m = RBMs.∂free_energy(rbm, samples.v_from_rand)
 	∂d = RBMs.∂free_energy(rbm, tests_x)
 	train_F = RBMs.free_energy(rbm, train_x)
@@ -147,162 +155,175 @@ function mnist_plots(; rbm, history, samples)
 end
 
 
-
 ###############################
-#= Benchmarks =#
+#= Benchmark definitions=#
 ###############################
 
-# Runs benchmarks in parallel
-function binary_mnist_benchmarks_run()
-    M = 128 # number of hidden units
-    B = 256 # batch size
-    nepoch = 3
 
-    benchmarks = (
-        mnist_binary_cd_sgd,
-        mnist_binary_pcd_sgd,
-        mnist_binary_cd_adam,
-        mnist_binary_pcd_adam,
-        mnist_binary_pcd_center_sgd,
-        mnist_binary_pcd_center_adam,
-        mnist_binary_rdm_sgd
-    )
-
-    @sync for benchmark in benchmarks
-        Threads.@spawn benchmark(; M, B, nepoch)
-    end
-end
-
-function binary_mnist_benchmarks_plots()
-    #= Make and save plots. Since Makie is not threadsafe
-    (see https://github.com/JuliaPlots/Makie.jl/issues/812)
-    we do this in series. =#
-    for file in readdir(OUTDIR; join=true)
-        if endswith(file, ".mnist.bson")
-            BSON.@load file rbm history samples
-            fig = mnist_plots(; rbm, history, samples)
-            save(file[begin:(end - 11)] * ".pdf", fig)
-        end
-    end
-end
-
-
-#= The different benchmarks are defined below =#
-
-
-function mnist_binary_cd_sgd(; M, B, nepoch)
+function binary_cd_sgd(; M, batchsize, epochs)
     @sync for η in [0.0001, 0.001], k in [1, 10]
-        Threads.@spawn begin
-            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-            RBMs.initialize!(rbm, train_x)
-            history = RBMs.cd!(
-                rbm, train_x; epochs=nepoch, batchsize=B,
-                steps=k, optimizer=Flux.Descent(η)
-            )
-            samples = mnist_produce_samples(; rbm)
-            BSON.@save "$OUTDIR/CD-$(k)_SGD-$(η).mnist.bson" rbm history samples
+        prefix = "$OUTDIR/CD-$(k)_SGD-$(η)"
+        Threads.@spawn open("$prefix.log", "w") do io
+            with_logger(SimpleLogger(io, Logging.Debug)) do
+                rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+                RBMs.initialize!(rbm, train_x)
+                history = RBMs.cd!(
+                    rbm, train_x; epochs, batchsize, steps=k, optimizer=Flux.Descent(η)
+                )
+                t_sampling = @elapsed samples = generate_samples(; rbm)
+                serialize("$prefix.data", (; rbm, history, samples))
+                @info "saved; sampling took $t_sampling seconds"
+            end
         end
     end
 end
 
 
-function mnist_binary_pcd_sgd(; M, B, nepoch)
+function binary_pcd_sgd(; M, batchsize, epochs)
     @sync for η in [0.0001, 0.001], k in [1, 10]
-        Threads.@spawn begin
-            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-            RBMs.initialize!(rbm, train_x)
-            history = RBMs.pcd!(
-                rbm, train_x; epochs=nepoch, batchsize=B,
-                steps=k, optimizer=Flux.Descent(η)
-            )
-            samples = mnist_produce_samples(; rbm)
-            BSON.@save "$OUTDIR/CD-$(k)_SGD-$(η).mnist.bson" rbm history samples
+        prefix = "$OUTDIR/CD-$(k)_SGD-$(η)"
+        Threads.@spawn open("$prefix.log", "w") do io
+            with_logger(SimpleLogger(io, Logging.Debug)) do
+                rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+                RBMs.initialize!(rbm, train_x)
+                history = RBMs.pcd!(
+                    rbm, train_x; epochs, batchsize, steps=k, optimizer=Flux.Descent(η)
+                )
+                t_sampling = @elapsed samples = generate_samples(; rbm)
+                serialize("$prefix.data", (; rbm, history, samples))
+                @info "saved; sampling took $t_sampling seconds"
+            end
         end
     end
 end
 
 
-function mnist_binary_cd_adam(; M, B, nepoch)
+function binary_cd_adam(; M, batchsize, epochs)
     @sync for η in [0.0001, 0.001], k in [1, 10]
-        Threads.@spawn begin
-            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-            RBMs.initialize!(rbm, train_x)
-            history = RBMs.cd!(
-                rbm, train_x; epochs=nepoch, batchsize=B,
-                steps=k, optimizer=Flux.ADAM(η)
-            )
-            samples = mnist_produce_samples(; rbm)
-            BSON.@save "$OUTDIR/CD-$(k)_ADAM-$(η).mnist.bson" rbm history samples
+        prefix = "$OUTDIR/CD-$(k)_ADAM-$(η)"
+        Threads.@spawn open("$prefix.log", "w") do io
+            with_logger(SimpleLogger(io, Logging.Debug)) do
+                rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+                RBMs.initialize!(rbm, train_x)
+                history = RBMs.cd!(
+                    rbm, train_x; epochs, batchsize, steps=k, optimizer=Flux.ADAM(η)
+                )
+                t_sampling = @elapsed samples = generate_samples(; rbm)
+                serialize("$prefix.data", (; rbm, history, samples))
+                @info "saved; sampling took $t_sampling seconds"
+            end
         end
     end
 end
 
 
-function mnist_binary_pcd_adam(; M, B, nepoch)
+function binary_pcd_adam(; M, batchsize, epochs)
     @sync for η in [0.0001, 0.001], k in [1, 10]
-        Threads.@spawn begin
-            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-            RBMs.initialize!(rbm, train_x)
-            history = RBMs.pcd!(
-                rbm, train_x; epochs=nepoch, batchsize=B,
-                steps=k, optimizer=Flux.ADAM(η)
-            )
-            samples = mnist_produce_samples(; rbm)
-            BSON.@save "$OUTDIR/PCD-$(k)_ADAM-$(η).mnist.bson" rbm history samples
+        prefix = "$OUTDIR/PCD-$(k)_ADAM-$(η)"
+        Threads.@spawn open("$prefix.log", "w") do io
+            with_logger(SimpleLogger(io, Logging.Debug)) do
+                rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+                RBMs.initialize!(rbm, train_x)
+                history = RBMs.pcd!(
+                    rbm, train_x; epochs, batchsize, steps=k, optimizer=Flux.ADAM(η)
+                )
+                t_sampling = @elapsed samples = generate_samples(; rbm)
+                serialize("$prefix.data", (; rbm, history, samples))
+                @info "saved; sampling took $t_sampling seconds"
+            end
         end
     end
 end
 
 
-function mnist_binary_pcd_center_sgd(; M, B, nepoch)
+function binary_pcd_center_sgd(; M, batchsize, epochs)
     @sync for η in [0.0001, 0.001], k in [1, 10], cv in [true, false], ch in [true, false]
-        Threads.@spawn begin
-            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-            RBMs.initialize!(rbm, train_x)
-            history = RBMs.pcd_centered!(
-                rbm, train_x; epochs=nepoch, batchsize=B,
-                steps=k, optimizer=Flux.Descent(η), center_v=cv, center_h=ch
-            )
-            samples = mnist_produce_samples(; rbm)
-            BSON.@save "$OUTDIR/PCD-$(k)_cv-$(Int(cv))_ch-$(Int(ch))SGD-$(η).mnist.bson" rbm history samples
+        prefix = "$OUTDIR/PCD-$(k)_cv-$(Int(cv))_ch-$(Int(ch))SGD-$(η)"
+        Threads.@spawn open("$prefix.log", "w") do io
+            with_logger(SimpleLogger(io, Logging.Debug)) do
+                rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+                RBMs.initialize!(rbm, train_x)
+                history = RBMs.pcd_centered!(
+                    rbm, train_x; epochs, batchsize, steps=k, optimizer=Flux.Descent(η), center_v=cv, center_h=ch
+                )
+                t_sampling = @elapsed samples = generate_samples(; rbm)
+                serialize("$prefix.data", (; rbm, history, samples))
+                @info "saved; sampling took $t_sampling seconds"
+            end
         end
     end
 end
 
 
-function mnist_binary_pcd_center_adam(; M, B, nepoch)
+function binary_pcd_center_adam(; M, batchsize, epochs)
     @sync for η in [0.0001, 0.001], k in [1, 10], cv in [true, false], ch in [true, false]
-        Threads.@spawn begin
-            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-            RBMs.initialize!(rbm, train_x)
-            history = RBMs.pcd_centered!(
-                rbm, train_x; epochs=nepoch, batchsize=B,
-                steps=k, optimizer=Flux.ADAM(η), center_v=cv, center_h=ch
-            )
-            samples = mnist_produce_samples(; rbm)
-            BSON.@save "$OUTDIR/PCD-$(k)_cv-$(Int(cv))_ch-$(Int(ch))_ADAM-$(η).mnist.bson" rbm history samples
+        prefix = "$OUTDIR/PCD-$(k)_cv-$(Int(cv))_ch-$(Int(ch))_ADAM-$(η)"
+        Threads.@spawn open("$prefix.log", "w") do io
+            with_logger(SimpleLogger(io, Logging.Debug)) do
+                rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+                RBMs.initialize!(rbm, train_x)
+                history = RBMs.pcd_centered!(
+                    rbm, train_x; epochs, batchsize, steps=k, optimizer=Flux.ADAM(η), center_v=cv, center_h=ch
+                )
+                t_sampling = @elapsed samples = generate_samples(; rbm)
+                serialize("$prefix.data", (; rbm, history, samples))
+                @info "saved; sampling took $t_sampling seconds"
+            end
         end
     end
 end
 
 
-function mnist_binary_rdm_sgd(; M, B, nepoch)
+function binary_rdm_sgd(; M, batchsize, epochs)
     # Repro one of the experiments in Decelle's paper
     # http://arxiv.org/abs/2105.13889
     @sync for η in [0.0001, 0.001], k in [10, 20]
-        Threads.@spawn begin
-            rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
-            RBMs.initialize!(rbm, train_x)
-            history = RBMs.rdm!(rbm, train_x; epochs=nepoch, batchsize=B, steps=k, optimizer=Flux.Descent(1e-4))
-            samples = mnist_produce_samples(; rbm, steps=k)
-            BSON.@save "$OUTDIR/Rdm-$(k)_SGD-$(η).mnist.bson" rbm history samples
+        prefix = "$OUTDIR/Rdm-$(k)_SGD-$(η)"
+        Threads.@spawn open("$prefix.log", "w") do io
+            with_logger(SimpleLogger(io, Logging.Debug)) do
+                rbm = RBMs.RBM(RBMs.Binary(Float,28,28), RBMs.Binary(Float,M), zeros(Float,28,28,M))
+                RBMs.initialize!(rbm, train_x)
+                history = RBMs.rdm!(rbm, train_x; epochs, batchsize, steps=k, optimizer=Flux.Descent(1e-4))
+                t_sampling = @elapsed samples = generate_samples(; rbm, len=k)
+                serialize("$prefix.data", (; rbm, history, samples))
+                @info "saved; sampling took $t_sampling seconds"
+            end
         end
     end
 end
 
 
 ##############
-# Run benchmarks
+# Run benchmarks in parallel
 ##############
 
-binary_mnist_benchmarks_run()
+M = 128 # number of hidden units
+batchsize = 256 # batch size
+epochs = 3
+
+# list all the benchmark functions defined above
+benchmarks = (
+    binary_cd_sgd,
+    binary_pcd_sgd,
+    binary_cd_adam,
+    binary_pcd_adam,
+    binary_pcd_center_sgd,
+    binary_pcd_center_adam,
+    binary_rdm_sgd
+)
+
+@sync for benchmark in benchmarks
+    Threads.@spawn benchmark(; M, batchsize, epochs)
+end
+
+#= Make and save plots. Since Makie is not threadsafe
+(see https://github.com/JuliaPlots/Makie.jl/issues/812)
+we do this in series. =#
+for file in readdir(OUTDIR; join=true)
+    if endswith(file, ".data")
+        @info "plotting $(basename(file))"
+        (; rbm, history, samples) = deserialize(file)
+        fig = produce_plot(; rbm, history, samples)
+        save(file[begin:(end - 11)] * ".pdf", fig)
+    end
+end
